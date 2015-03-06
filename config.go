@@ -6,22 +6,22 @@ import (
 	"fmt"
 	"net"
 	"strconv"
-	"strings"
 	"time"
 )
 
-var Debug = false
-
+// ConfigPoller contacts an ElastiCache configuration endpoint for cluster state
 type ConfigPoller struct {
 	Endpoint string
 	Timeout  time.Duration
 }
 
+// ClusterConfig describes cluster state
 type ClusterConfig struct {
 	Version int
 	Nodes   []Node
 }
 
+// Node is an ElastiCache machine
 type Node struct {
 	Host string
 	IP   string
@@ -29,10 +29,11 @@ type Node struct {
 }
 
 var (
-	resultPrefixConfig = []byte("CONFIG")
-	resultEnd          = []byte("END\r\n")
+	configPrefix = []byte("CONFIG")
+	configEnd    = []byte("END\r\n")
 )
 
+// Get queries the configuration endpoint for cluster state
 func (c ConfigPoller) Get() (ClusterConfig, error) {
 	if c.Timeout == 0 {
 		c.Timeout = time.Second
@@ -51,6 +52,8 @@ func (c ConfigPoller) Get() (ClusterConfig, error) {
 	if err != nil {
 		return ClusterConfig{}, err
 	}
+
+	// flush
 	if err := rw.Flush(); err != nil {
 		return ClusterConfig{}, err
 	}
@@ -67,43 +70,56 @@ func (c ConfigPoller) Get() (ClusterConfig, error) {
 
 func (c ConfigPoller) parseResponse(r *bufio.Reader, cfg *ClusterConfig) error {
 	// config
-	configLine, err := r.ReadSlice('\n')
+	line, err := r.ReadSlice('\n')
 	if err != nil {
 		return err
 	}
-	if !bytes.HasPrefix(configLine, resultPrefixConfig) {
-		return fmt.Errorf("expected prefix", resultPrefixConfig)
+	if !bytes.HasPrefix(line, configPrefix) {
+		return fmt.Errorf("expected %v got %s", configPrefix, line)
 	}
 
 	// version
-	versionLine, err := r.ReadString('\n')
+	line, err = r.ReadSlice('\n')
 	if err != nil {
 		return err
 	}
-	cfg.Version, err = strconv.Atoi(strings.Trim(versionLine, "\r\n"))
+	line = bytes.Trim(line, "\r\n")
+	cfg.Version, err = strconv.Atoi(string(line))
 	if err != nil {
 		return err
 	}
 
 	// nodes
-	nodeLine, err := r.ReadString('\n')
+	line, err = r.ReadSlice('\n')
 	if err != nil {
 		return err
 	}
-	nodeLine = strings.Trim(nodeLine, "\n")
-	for _, ns := range strings.Split(nodeLine, " ") {
-		parts := strings.Split(ns, "|")
+	line = bytes.Trim(line, "\n")
+	for _, ns := range bytes.Split(line, []byte(" ")) {
+		parts := bytes.Split(ns, []byte("|"))
 		if len(parts) != 3 {
 			return fmt.Errorf("expected 3 parts in %#v", parts)
 		}
 		var node Node
-		node.Host = parts[0]
-		node.IP = parts[1]
-		node.Port, err = strconv.Atoi(parts[2])
+		node.Host = string(parts[0])
+		node.IP = string(parts[1])
+		node.Port, err = strconv.Atoi(string(parts[2]))
 		if err != nil {
 			return err
 		}
 		cfg.Nodes = append(cfg.Nodes, node)
+	}
+
+	// burn extra newline
+	r.ReadSlice('\n')
+
+	// end
+	line, err = r.ReadSlice('\n')
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(line, configEnd) {
+		return fmt.Errorf("expected %s got %s", configEnd, line)
 	}
 	return nil
 }

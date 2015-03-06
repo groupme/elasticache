@@ -1,7 +1,6 @@
 package elasticache
 
 import (
-	"fmt"
 	"net"
 	"reflect"
 	"testing"
@@ -40,7 +39,7 @@ func TestClusterConfig(t *testing.T) {
 
 	if config.Version != 12 {
 		t.Error("want 12")
-		t.Error("err", config.Version)
+		t.Error("got", config.Version)
 	}
 
 	want := []Node{
@@ -81,24 +80,20 @@ func (s fakeConfigServer) Listen(addr string) error {
 func (s fakeConfigServer) Accept() error {
 	conn, err := s.ln.Accept()
 	if err != nil {
-		fmt.Println("accept error", err)
 		return err
 	}
-	fmt.Println("accept ok")
 
 	var input []byte
-	n, err := conn.Read(input)
+	_, err = conn.Read(input)
 	if err != nil {
-		fmt.Println("read error", err)
-	}
-	fmt.Printf("read %d bytes", n)
-
-	n, err = conn.Write(fakeConfigServerResponse)
-	if err != nil {
-		fmt.Println("write error", err)
 		return err
 	}
-	fmt.Printf("wrote %n bytes", n)
+
+	_, err = conn.Write(fakeConfigServerResponse)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
