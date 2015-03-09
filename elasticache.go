@@ -9,6 +9,23 @@ import (
 	"time"
 )
 
+// Servers returns a list of cache node URLs for use with a memcache client
+func Servers(configEndpoint string) ([]string, error) {
+	var poller ConfigPoller
+	poller.Endpoint = configEndpoint
+
+	config, err := poller.Get()
+	if err != nil {
+		return []string{}, err
+	}
+
+	var servers []string
+	for _, n := range config.Nodes {
+		servers = append(servers, n.URL())
+	}
+	return servers, nil
+}
+
 // ConfigPoller contacts an ElastiCache configuration endpoint for cluster state
 type ConfigPoller struct {
 	Endpoint string
@@ -26,6 +43,10 @@ type Node struct {
 	Host string
 	IP   string
 	Port int
+}
+
+func (n Node) URL() string {
+	return fmt.Sprintf("%s:%d", n.IP, n.Port)
 }
 
 var (
